@@ -8,9 +8,15 @@ from datetime import datetime
 import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here-12345'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here-12345')
+
+# Database configuration - works with both SQLite (local) and PostgreSQL (production)
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+if database_url and database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
@@ -384,7 +390,12 @@ def handle_stop_typing(data):
         'sender_id': current_user.id
     }, room=str(receiver_id))
 
+# Production ready - creates tables and runs on correct port
 if __name__ == "__main__":
-    import os
+    with app.app_context():
+        db.create_all()
+        print("✅ Database tables created/verified successfully!")
+    
     port = int(os.environ.get("PORT", 8000))
-    socketio.run(app, host='0.0.0.0', port=port)
+    print(f"🚀 Server starting on http://0.0.0.0:{port}")
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
