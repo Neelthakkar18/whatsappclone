@@ -20,7 +20,7 @@
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
+            height: 100dvh;
             overflow: hidden;
             position: relative;
         }
@@ -53,7 +53,7 @@
 
         .app-container {
             display: flex;
-            height: 100vh;
+            height: 100dvh;
             background: rgba(255, 255, 255, 0.98);
             position: relative;
             z-index: 1;
@@ -230,6 +230,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            height: 100%;
             background: url('https://www.transparenttextures.com/patterns/dark-mosaic.png'), linear-gradient(135deg, #e5ddd5 0%, #d4c9c0 100%);
         }
 
@@ -290,6 +291,7 @@
             flex-direction: column;
             gap: 8px;
             -webkit-overflow-scrolling: touch;
+            padding-bottom: 70px;
         }
 
         .message {
@@ -346,7 +348,7 @@
             display: none;
         }
 
-        /* Message Input Area - IMPROVED FOR MOBILE */
+        /* Message Input Area - FIXED with Sticky */
         .message-input-area {
             display: flex;
             padding: 10px 15px;
@@ -356,13 +358,15 @@
             align-items: center;
             border-top: 1px solid rgba(0, 0, 0, 0.1);
             flex-wrap: wrap;
+            position: sticky;
+            bottom: 0;
+            z-index: 10;
         }
 
         .input-actions {
             display: flex;
             gap: 12px;
             align-items: center;
-            order: 1;
         }
 
         .input-actions i {
@@ -381,7 +385,6 @@
 
         .message-input-wrapper {
             flex: 1;
-            order: 2;
         }
 
         .message-input {
@@ -405,7 +408,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            order: 3;
         }
 
         .send-button:active {
@@ -685,7 +687,8 @@
         }
 
         @media (max-width: 480px) {
-            .input-actions {
+            .message-input-area {
+                padding: 8px 10px;
                 gap: 6px;
             }
             
@@ -702,6 +705,10 @@
             .send-button {
                 width: 36px;
                 height: 36px;
+            }
+            
+            .send-button i {
+                font-size: 14px;
             }
         }
     </style>
