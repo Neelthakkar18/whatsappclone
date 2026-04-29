@@ -27,7 +27,9 @@
 </head>
 <body>
     <div class="register-container">
-        <div class="logo"><i class="fab fa-whatsapp"></i></div>
+       <div class="logo">
+    <img src="{{ url_for('static', filename='logo.png') }}" width="80">
+</div>
         <h2>Create Account</h2>
         <div class="subtitle">Join WhatsApp Clone today</div>
         {% if error %}
