@@ -8,11 +8,15 @@ from datetime import datetime
 import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here-12345'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here-12345')
 
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+# Database configuration - works with both SQLite (local) and PostgreSQL (production)
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+if database_url and database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
@@ -33,33 +37,38 @@ class User(UserMixin, db.Model):
     profile_photo = db.Column(db.String(200), default='/static/default-avatar.png')
     bio = db.Column(db.String(160), default='Hey there! I am using WhatsApp Clone')
     online = db.Column(db.Boolean, default=False)
-    last_seen = db.Column(db.DateTime, default=datetime.now)
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
 
 # Message Model
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    text = db.Column(db.Text, nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.now)
+    text = db.Column(db.Text, nullable=True)
+    message_type = db.Column(db.String(20), default='text')
+    media_url = db.Column(db.String(500), nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
+    is_delivered = db.Column(db.Boolean, default=False)
 
 # Blocked Users Model
 class BlockedUser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     blocker_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     blocked_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    created_at = db.Column(db.DateTime, default=datetime.now)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 def is_blocked(user1_id, user2_id):
+    """Check if user1 has blocked user2"""
     block = BlockedUser.query.filter_by(blocker_id=user1_id, blocked_id=user2_id).first()
     return block is not None
 
 def is_blocked_by_other(user1_id, user2_id):
+    """Check if user1 is blocked by user2"""
     block = BlockedUser.query.filter_by(blocker_id=user2_id, blocked_id=user1_id).first()
     return block is not None
 
@@ -117,7 +126,7 @@ def register():
 def logout():
     user = User.query.get(current_user.id)
     user.online = False
-    user.last_seen = datetime.now()
+    user.last_seen = datetime.utcnow()
     db.session.commit()
     logout_user()
     return redirect("/login")
@@ -126,6 +135,7 @@ def logout():
 @login_required
 def chat():
     users = User.query.filter(User.id != current_user.id).all()
+    # Filter out users that current user has blocked
     visible_users = []
     for user in users:
         if not is_blocked(current_user.id, user.id):
@@ -135,9 +145,11 @@ def chat():
 @app.route("/get_messages/<int:user_id>")
 @login_required
 def get_messages(user_id):
+    # Check if current user is blocked by the other user
     if is_blocked_by_other(current_user.id, user_id):
         return jsonify({'error': 'You have been blocked by this user', 'blocked_by_other': True}), 403
     
+    # Check if current user blocked the other user
     if is_blocked(current_user.id, user_id):
         return jsonify({'error': 'You have blocked this user', 'blocked_by_you': True}), 403
     
@@ -149,15 +161,23 @@ def get_messages(user_id):
     for msg in messages:
         if msg.receiver_id == current_user.id and not msg.is_read:
             msg.is_read = True
-            db.session.commit()
+            socketio.emit('message_read', {
+                'message_id': msg.id,
+                'sender_id': msg.sender_id
+            }, room=str(msg.sender_id))
+    
+    db.session.commit()
     
     return jsonify([{
         'id': msg.id,
         'text': msg.text,
+        'message_type': msg.message_type,
+        'media_url': msg.media_url,
         'sender_id': msg.sender_id,
         'receiver_id': msg.receiver_id,
         'timestamp': msg.timestamp.isoformat(),
-        'is_read': msg.is_read
+        'is_read': msg.is_read,
+        'is_delivered': msg.is_delivered
     } for msg in messages])
 
 @app.route("/search_users")
@@ -172,6 +192,7 @@ def search_users():
         User.username.contains(query)
     ).limit(20).all()
     
+    # Filter out users that current user has blocked AND users that have blocked current user
     result = []
     for user in users:
         if not is_blocked(current_user.id, user.id) and not is_blocked_by_other(current_user.id, user.id):
@@ -200,7 +221,7 @@ def update_profile():
         current_user.profile_photo = f'/static/profile_photos/{filename}'
     
     db.session.commit()
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'profile_photo': current_user.profile_photo, 'bio': current_user.bio})
 
 @app.route("/get_user_profile/<int:user_id>")
 @login_required
@@ -212,7 +233,9 @@ def get_user_profile(user_id):
         'profile_photo': user.profile_photo,
         'bio': user.bio,
         'online': user.online,
-        'last_seen': user.last_seen.isoformat() if user.last_seen else None
+        'last_seen': user.last_seen.isoformat() if user.last_seen else None,
+        'blocked_by_you': is_blocked(current_user.id, user_id),
+        'blocked_by_other': is_blocked_by_other(current_user.id, user_id)
     })
 
 @app.route("/block_user/<int:user_id>", methods=["POST"])
@@ -277,61 +300,102 @@ def handle_connect():
         join_room(str(current_user.id))
         current_user.online = True
         db.session.commit()
-        emit('user_status', {'user_id': current_user.id, 'status': 'online'}, broadcast=True)
+        emit('user_status', {
+            'user_id': current_user.id,
+            'username': current_user.username,
+            'status': 'online'
+        }, broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     if current_user.is_authenticated:
         current_user.online = False
-        current_user.last_seen = datetime.now()
+        current_user.last_seen = datetime.utcnow()
         db.session.commit()
-        emit('user_status', {'user_id': current_user.id, 'status': 'offline'}, broadcast=True)
+        emit('user_status', {
+            'user_id': current_user.id,
+            'username': current_user.username,
+            'status': 'offline'
+        }, broadcast=True)
 
 @socketio.on('send_message')
 def handle_send_message(data):
-    receiver_id = int(data['receiver'])
-    text = data['message']
+    receiver_id = int(data['receiver_id'])
+    text = data.get('text', '')
+    message_type = data.get('message_type', 'text')
+    media_url = data.get('media_url', '')
     
-    # Check blocks
+    # Check if sender is blocked by receiver
     if is_blocked_by_other(current_user.id, receiver_id):
-        emit('error', {'message': 'You have been blocked by this user'}, room=str(current_user.id))
+        emit('error', {'message': 'You cannot message this user - you have been blocked'}, room=str(current_user.id))
         return
     
+    # Check if sender has blocked receiver
     if is_blocked(current_user.id, receiver_id):
-        emit('error', {'message': 'You have blocked this user'}, room=str(current_user.id))
+        emit('error', {'message': 'You have blocked this user. Unblock to send messages.'}, room=str(current_user.id))
         return
     
-    # Save message
     message = Message(
         sender_id=current_user.id,
         receiver_id=receiver_id,
-        text=text
+        text=text if text else (media_url.split('/')[-1] if media_url else 'Media'),
+        message_type=message_type,
+        media_url=media_url if media_url else None,
+        is_delivered=True
     )
     db.session.add(message)
     db.session.commit()
     
     message_data = {
         'id': message.id,
-        'message': message.text,
+        'text': message.text,
+        'message_type': message.message_type,
+        'media_url': message.media_url,
         'sender_id': message.sender_id,
+        'receiver_id': message.receiver_id,
         'sender_name': current_user.username,
-        'timestamp': message.timestamp.isoformat()
+        'timestamp': message.timestamp.isoformat(),
+        'is_read': message.is_read,
+        'is_delivered': message.is_delivered
     }
     
-    # Send to receiver
-    emit('receive_message', message_data, room=str(receiver_id))
-    # Send confirmation to sender
+    emit('new_message', message_data, room=str(receiver_id))
     emit('message_sent', message_data, room=str(current_user.id))
+
+@socketio.on('mark_read')
+def handle_mark_read(data):
+    message_id = data['message_id']
+    message = Message.query.get(message_id)
+    if message and message.receiver_id == current_user.id and not message.is_read:
+        message.is_read = True
+        db.session.commit()
+        emit('message_read', {
+            'message_id': message_id,
+            'sender_id': message.sender_id
+        }, room=str(message.sender_id))
 
 @socketio.on('typing')
 def handle_typing(data):
     receiver_id = data['receiver_id']
-    emit('user_typing', {'sender_id': current_user.id, 'username': current_user.username}, room=str(receiver_id))
+    if not is_blocked(current_user.id, receiver_id) and not is_blocked_by_other(current_user.id, receiver_id):
+        emit('user_typing', {
+            'sender_id': current_user.id,
+            'username': current_user.username
+        }, room=str(receiver_id))
 
+@socketio.on('stop_typing')
+def handle_stop_typing(data):
+    receiver_id = data['receiver_id']
+    emit('user_stop_typing', {
+        'sender_id': current_user.id
+    }, room=str(receiver_id))
+
+# Production ready - creates tables and runs on correct port
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-        print("✅ Database created!")
+        print("✅ Database tables created/verified successfully!")
     
     port = int(os.environ.get("PORT", 8000))
-socketio.run(app, host='0.0.0.0', port=port)
+    print(f"🚀 Server starting on http://0.0.0.0:{port}")
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
