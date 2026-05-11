@@ -30,7 +30,26 @@ function addMessage(msg, type) {
 
     let div = document.createElement("div");
     div.classList.add("message", type);
-    div.innerText = msg;
+
+    // ✅ Correct Indian Time
+    let time = new Date().toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
+    });
+
+    div.innerHTML = `
+        <div>${msg}</div>
+        <div style="
+            font-size:11px;
+            margin-top:5px;
+            text-align:right;
+            opacity:0.7;
+        ">
+            ${time}
+        </div>
+    `;
 
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
