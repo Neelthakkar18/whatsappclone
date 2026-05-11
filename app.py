@@ -37,7 +37,7 @@ class User(UserMixin, db.Model):
     profile_photo = db.Column(db.String(200), default='/static/default-avatar.png')
     bio = db.Column(db.String(160), default='Hey there! I am using WhatsApp Clone')
     online = db.Column(db.Boolean, default=False)
-    last_seen = db.Column(db.DateTime, default=datetime.utcnow)
+    last_seen = db.Column(db.DateTime, default=datetime.now)  # ✅ FIXED: utcnow → now
 
 # Message Model
 class Message(db.Model):
@@ -47,7 +47,7 @@ class Message(db.Model):
     text = db.Column(db.Text, nullable=True)
     message_type = db.Column(db.String(20), default='text')
     media_url = db.Column(db.String(500), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)  # ✅ FIXED: utcnow → now
     is_read = db.Column(db.Boolean, default=False)
     is_delivered = db.Column(db.Boolean, default=False)
 
@@ -56,7 +56,7 @@ class BlockedUser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     blocker_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     blocked_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now)  # ✅ FIXED: utcnow → now
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -126,7 +126,7 @@ def register():
 def logout():
     user = User.query.get(current_user.id)
     user.online = False
-    user.last_seen = datetime.utcnow()
+    user.last_seen = datetime.now()  # ✅ FIXED: utcnow → now
     db.session.commit()
     logout_user()
     return redirect("/login")
@@ -310,7 +310,7 @@ def handle_connect():
 def handle_disconnect():
     if current_user.is_authenticated:
         current_user.online = False
-        current_user.last_seen = datetime.utcnow()
+        current_user.last_seen = datetime.now()  # ✅ FIXED: utcnow → now
         db.session.commit()
         emit('user_status', {
             'user_id': current_user.id,
