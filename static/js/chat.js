@@ -12,32 +12,35 @@ function sendMsg() {
 
     if (!msg || !selectedUser) return;
 
-    socket.emit("send_message", {
-        message: msg,
-        receiver: selectedUser
+    // ✅ Create proper timestamp
+    let currentTime = new Date().toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
     });
 
-    addMessage(msg, "sent");
+    let data = {
+        message: msg,
+        receiver: selectedUser,
+        time: currentTime
+    };
+
+    socket.emit("send_message", data);
+
+    addMessage(msg, "sent", currentTime);
+
     document.getElementById("msg").value = "";
 }
 
 socket.on("receive_message", function(data) {
-    addMessage(data.message, "received");
+    addMessage(data.message, "received", data.time);
 });
 
-function addMessage(msg, type) {
+function addMessage(msg, type, time) {
     let box = document.getElementById("chat-box");
 
     let div = document.createElement("div");
     div.classList.add("message", type);
-
-    // ✅ Correct Indian Time
-    let time = new Date().toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Kolkata'
-    });
 
     div.innerHTML = `
         <div>${msg}</div>
