@@ -333,4 +333,5 @@ if __name__ == "__main__":
         db.create_all()
         print("✅ Database created!")
     
-    socketio.run(app, debug=True, port=8000)
+    port = int(os.environ.get("PORT", 8000))
+socketio.run(app, host='0.0.0.0', port=port)
